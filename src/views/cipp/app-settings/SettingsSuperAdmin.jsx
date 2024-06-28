@@ -1,20 +1,12 @@
 import { useGenericGetRequestQuery, useLazyGenericPostRequestQuery } from 'src/store/api/app.js'
-import {
-  CButton,
-  CCallout,
-  CCard,
-  CCardBody,
-  CCardHeader,
-  CCol,
-  CForm,
-  CLink,
-  CRow,
-  CSpinner,
-} from '@coreui/react'
+import { CAccordion, CButton, CCol, CForm, CLink, CRow, CSpinner } from '@coreui/react'
 import { Form } from 'react-final-form'
 import { RFFCFormRadio } from 'src/components/forms/index.js'
 import React from 'react'
 import { CippCallout } from 'src/components/layout/index.js'
+import CippAccordionItem from 'src/components/contentcards/CippAccordionItem'
+import SettingsCustomRoles from 'src/views/cipp/app-settings/components/SettingsCustomRoles'
+import CippButtonCard from 'src/components/contentcards/CippButtonCard'
 
 export function SettingsSuperAdmin() {
   const partnerConfig = useGenericGetRequestQuery({
@@ -30,14 +22,33 @@ export function SettingsSuperAdmin() {
       values: values,
     }).then((res) => {})
   }
+  const buttonCard = (
+    <CButton
+      form="submitForm"
+      type="submit"
+      color="primary"
+      disabled={webhookCreateResult.isFetching}
+    >
+      {webhookCreateResult.isFetching ? (
+        <>
+          <CSpinner size="sm" className="me-2" />
+        </>
+      ) : (
+        'Save'
+      )}
+    </CButton>
+  )
 
   return (
-    <CCard className="h-100">
-      <CCardHeader></CCardHeader>
-      <CCardBody>
+    <>
+      <CippButtonCard
+        title="Tenant Mode"
+        titleType="big"
+        isFetching={partnerConfig.isFetching}
+        CardButton={buttonCard}
+      >
         <>
           <>
-            <h3 className="underline mb-5">Super Admin Configuration</h3>
             <CRow>
               <CCol sm={12} md={6} lg={8} className="mb-3">
                 <p className="me-1">
@@ -63,7 +74,7 @@ export function SettingsSuperAdmin() {
                   render={({ handleSubmit }) => (
                     <>
                       {partnerConfig.isFetching && <CSpinner size="sm" className="me-2" />}
-                      <CForm onSubmit={handleSubmit}>
+                      <CForm id="submitForm" onSubmit={handleSubmit}>
                         <RFFCFormRadio
                           name="TenantMode"
                           label="Multi Tenant - GDAP Mode"
@@ -79,21 +90,6 @@ export function SettingsSuperAdmin() {
                           label="Single Tenant - Own Tenant Mode"
                           value="owntenant"
                         />
-                        <CButton
-                          type="submit"
-                          color="primary"
-                          className="my-3"
-                          disabled={webhookCreateResult.isFetching}
-                        >
-                          {webhookCreateResult.isFetching ? (
-                            <>
-                              <CSpinner size="sm" className="me-2" />
-                              Saving...
-                            </>
-                          ) : (
-                            'Save'
-                          )}
-                        </CButton>
                       </CForm>
                     </>
                   )}
@@ -107,7 +103,8 @@ export function SettingsSuperAdmin() {
             </CRow>
           </>
         </>
-      </CCardBody>
-    </CCard>
+      </CippButtonCard>
+      <SettingsCustomRoles />
+    </>
   )
 }
