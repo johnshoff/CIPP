@@ -16,6 +16,7 @@ import {
   CAccordionHeader,
   CAccordionBody,
   CAccordionItem,
+  CTooltip,
 } from '@coreui/react'
 import DataTable, { createTheme } from 'react-data-table-component'
 import PropTypes from 'prop-types'
@@ -31,13 +32,13 @@ import {
   faSync,
 } from '@fortawesome/free-solid-svg-icons'
 import { cellGenericFormatter } from './CellGenericFormat'
-import { ModalService } from '../utilities'
+import { CippCodeOffCanvas, ModalService } from '../utilities'
 import { useLazyGenericGetRequestQuery, useLazyGenericPostRequestQuery } from 'src/store/api/app'
 import { debounce } from 'lodash-es'
 import { useSearchParams } from 'react-router-dom'
 import CopyToClipboard from 'react-copy-to-clipboard'
 import { setDefaultColumns } from 'src/store/features/app'
-import M365Licenses from 'src/data/M365Licenses'
+import { CippCallout } from '../layout'
 
 const FilterComponent = ({ filterText, onFilter, onClear, filterlist, onFilterPreset }) => (
   <>
@@ -124,6 +125,7 @@ export default function CippTable({
   filterlist,
   showFilter = true,
   endpointName,
+  defaultSortAsc = true,
   tableProps: {
     keyField = 'id',
     theme = 'cyberdrain',
@@ -155,6 +157,7 @@ export default function CippTable({
   const [filterviaURL, setFilterviaURL] = React.useState(false)
   const [originalColumns, setOrginalColumns] = React.useState(columns)
   const [updatedColumns, setUpdatedColumns] = React.useState(columns)
+  const [codeOffcanvasVisible, setCodeOffcanvasVisible] = useState(false)
   if (defaultColumns && defaultColumnsSet === false && endpointName) {
     const defaultColumnsArray = defaultColumns.split(',').filter((item) => item)
 
@@ -411,6 +414,7 @@ export default function CippTable({
     (modalMessage, modalUrl, modalType = 'GET', modalBody, modalInput, modalDropdown) => {
       if (modalType === 'GET') {
         ModalService.confirm({
+          getData: () => inputRef.current?.value,
           body: (
             <div style={{ overflow: 'visible' }}>
               <div>{modalMessage}</div>
@@ -463,6 +467,18 @@ export default function CippTable({
           title: 'Confirm',
           onConfirm: async () => {
             const resultsarr = []
+            const selectedValue = inputRef.current.value
+            let additionalFields = {}
+            if (inputRef.current.nodeName === 'SELECT') {
+              const selectedItem = dropDownInfo.data.find(
+                (item) => item[modalDropdown.valueField] === selectedValue,
+              )
+              if (selectedItem && modalDropdown.addedField) {
+                Object.keys(modalDropdown.addedField).forEach((key) => {
+                  additionalFields[key] = selectedItem[modalDropdown.addedField[key]]
+                })
+              }
+            }
             for (const row of selectedRows) {
               setLoopRunning(true)
               const urlParams = new URLSearchParams(modalUrl.split('?')[1])
@@ -489,26 +505,13 @@ export default function CippTable({
                 }
               }
               const NewModalUrl = `${modalUrl.split('?')[0]}?${urlParams.toString()}`
-              const selectedValue = inputRef.current.value
-              let additionalFields = {}
-              if (inputRef.current.nodeName === 'SELECT') {
-                const selectedItem = dropDownInfo.data.find(
-                  (item) => item[modalDropdown.valueField] === selectedValue,
-                )
-                if (selectedItem && modalDropdown.addedField) {
-                  Object.keys(modalDropdown.addedField).forEach((key) => {
-                    additionalFields[key] = selectedItem[modalDropdown.addedField[key]]
-                  })
-                }
-              }
-
               const results = await genericPostRequest({
                 path: NewModalUrl,
                 values: {
                   ...modalBody,
                   ...newModalBody,
                   ...additionalFields,
-                  ...{ input: inputRef.current.value },
+                  ...{ input: selectedValue },
                 },
               })
               resultsarr.push(results)
@@ -579,7 +582,6 @@ export default function CippTable({
     }
 
     const executeselectedAction = (item) => {
-      //  console.log(item)
       setModalContent({
         item,
       })
@@ -605,16 +607,18 @@ export default function CippTable({
     }
     if (refreshFunction) {
       defaultActions.push([
-        <CButton
-          key={'refresh-action'}
-          onClick={() => {
-            refreshFunction((Math.random() + 1).toString(36).substring(7))
-          }}
-          className="m-1"
-          size="sm"
-        >
-          <FontAwesomeIcon icon={faSync} />
-        </CButton>,
+        <CTooltip key={'refresh-tooltip'} content="Refresh" placement="top">
+          <CButton
+            key={'refresh-action'}
+            onClick={() => {
+              refreshFunction((Math.random() + 1).toString(36).substring(7))
+            }}
+            className="m-1"
+            size="sm"
+          >
+            <FontAwesomeIcon icon={faSync} spin={isFetching} />
+          </CButton>
+        </CTooltip>,
       ])
     }
 
@@ -633,6 +637,7 @@ export default function CippTable({
 
       // Define the flatten function
       const flatten = (obj, prefix = '') => {
+        if (obj === null) return {}
         return Object.keys(obj).reduce((output, key) => {
           const newKey = prefix ? `${prefix}.${key}` : key
           const value = obj[key] === null ? '' : obj[key]
@@ -640,7 +645,17 @@ export default function CippTable({
           if (typeof value === 'object' && !Array.isArray(value)) {
             Object.assign(output, flatten(value, newKey))
           } else {
-            output[newKey] = value
+            if (Array.isArray(value)) {
+              if (typeof value[0] === 'object') {
+                value.map((item, idx) => {
+                  Object.assign(output, flatten(item, `${newKey}[${idx}]`))
+                })
+              } else {
+                output[newKey] = value
+              }
+            } else {
+              output[newKey] = value
+            }
           }
           return output
         }, {})
@@ -673,8 +688,7 @@ export default function CippTable({
         })
         return Array.isArray(exportData) && exportData.length > 0
           ? exportData.map((obj) => {
-              const flattenedObj = flatten(obj)
-              return applyFormatter(flattenedObj)
+              return flatten(applyFormatter(obj))
             })
           : []
       }
@@ -685,8 +699,7 @@ export default function CippTable({
       // Adjusted dataFlat processing to include formatting
       let dataFlat = Array.isArray(data)
         ? data.map((item) => {
-            const flattenedItem = flatten(item)
-            return applyFormatter(flattenedItem)
+            return flatten(applyFormatter(item))
           })
         : []
       if (!disablePDFExport) {
@@ -815,6 +828,20 @@ export default function CippTable({
         </>,
       ])
     }
+    defaultActions.push([
+      <CTooltip key={'code-tooltip'} content="View API Response" placement="top">
+        <CButton
+          key={'code-action'}
+          onClick={() => {
+            setCodeOffcanvasVisible(true)
+          }}
+          className="m-1"
+          size="sm"
+        >
+          <FontAwesomeIcon icon="code" />
+        </CButton>
+      </CTooltip>,
+    ])
     return (
       <>
         <div className="w-100 d-flex justify-content-start">
@@ -872,7 +899,7 @@ export default function CippTable({
         {(updatedColumns || !dynamicColumns) && (
           <>
             {(massResults.length >= 1 || loopRunning) && (
-              <CCallout color="info">
+              <CippCallout color="info" dismissible>
                 {massResults[0]?.data?.Metadata?.Heading && (
                   <CAccordion flush>
                     {massResults.map((message, idx) => {
@@ -947,7 +974,7 @@ export default function CippTable({
                     <CSpinner size="sm" />
                   </li>
                 )}
-              </CCallout>
+              </CippCallout>
             )}
             <DataTable
               customStyles={customStyles}
@@ -972,7 +999,7 @@ export default function CippTable({
               expandableRowsComponent={expandableRowsComponent}
               highlightOnHover={highlightOnHover}
               expandOnRowClicked={expandOnRowClicked}
-              defaultSortAsc
+              defaultSortAsc={defaultSortAsc}
               defaultSortFieldId={1}
               sortFunction={customSort}
               paginationPerPage={tablePageSize}
@@ -982,6 +1009,13 @@ export default function CippTable({
               {...rest}
             />
             {selectedRows.length >= 1 && <CCallout>Selected {selectedRows.length} items</CCallout>}
+            <CippCodeOffCanvas
+              row={data}
+              hideButton={true}
+              state={codeOffcanvasVisible}
+              hideFunction={() => setCodeOffcanvasVisible(false)}
+              title="API Response"
+            />
           </>
         )}
       </div>
@@ -1026,6 +1060,7 @@ export const CippTablePropTypes = {
   disableCSVExport: PropTypes.bool,
   error: PropTypes.object,
   filterlist: PropTypes.arrayOf(PropTypes.object),
+  defaultSortAsc: PropTypes.bool,
 }
 
 CippTable.propTypes = CippTablePropTypes
